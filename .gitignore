@@ -1,0 +1,15 @@
+# MQL5 Compiled Executables
+*.ex5
+*.ex4
+
+# Logs and temporary files
+*.log
+*.tmp
+compile.log
+
+# Editor & OS files
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store
