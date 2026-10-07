@@ -17,6 +17,7 @@
 #include "../Include/XAUUSD_Scalper/Risk/RiskManager.mqh"
 #include "../Include/XAUUSD_Scalper/Trade/TradeExecutor.mqh"
 #include "../Include/XAUUSD_Scalper/Utils/Logger.mqh"
+#include "../Include/XAUUSD_Scalper/Utils/UIDashboard.mqh"
 
 //--- Inputs
 input group "=== General Settings ==="
@@ -44,6 +45,7 @@ CSetupAnalyzer    g_setup_analyzer;
 CRiskManager      g_risk_manager;
 CTradeExecutor    g_trade_executor;
 CLogger           g_logger;
+CUIDashboard      g_dashboard;
 
 //+------------------------------------------------------------------+
 //| Expert initialization function                                   |
@@ -78,6 +80,9 @@ int OnInit()
       return INIT_FAILED;
    }
 
+   // 5. Initialize Read-Only Observer Dashboard
+   g_dashboard.Init(_Symbol, InpMagicNumber);
+
    g_logger.Log(LOG_INFO, "OnInit", "Initialization successful. Ready for V1 Baseline execution.");
    return INIT_SUCCEEDED;
 }
@@ -87,6 +92,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
 {
+   g_dashboard.Destroy();
    g_logger.Log(LOG_INFO, "OnDeinit", StringFormat("EA Deinitialized. Reason code: %d", reason));
 }
 
@@ -96,7 +102,9 @@ void OnDeinit(const int reason)
 void OnTick()
 {
    // V1 Locked Pipeline: M15 Sweep -> M5 Causal Confirmation -> Risk -> Execution
-   
+   string last_decision = "HOLD / EVALUATING";
+   string last_reason   = "Scanning";
+
    // 1. Observation / Diagnostics (Spread is observation only - NOT a trade blocking gate)
    double current_spread = 0.0;
    g_spread_filter.IsPassed(_Symbol, current_spread);
@@ -104,14 +112,21 @@ void OnTick()
    // 2. Risk Criteria Check (Active Position Scope)
    if(!g_risk_manager.ValidateGeneralRisk(_Symbol))
    {
-      return; // Max open trades reached -> NO TRADE
+      last_decision = "NO_TRADE";
+      last_reason   = "Max Open Positions";
+      g_dashboard.Update(last_decision, last_reason, g_setup_analyzer);
+      return;
    }
 
    // 3. M15 Sweep Lifecycle & M5 Causal Confirmation
    TradeSignal signal;
    if(!g_setup_analyzer.EvaluateSetup(_Symbol, signal))
    {
-      return; // No confirmed Setup -> NO TRADE
+      last_decision = "NO_TRADE";
+      last_reason   = g_setup_analyzer.GetLastNoTradeReason();
+      if(last_reason == "") last_reason = "No Confirmed Setup";
+      g_dashboard.Update(last_decision, last_reason, g_setup_analyzer);
+      return;
    }
 
    // 4. Calculate Dynamic Lot Size from Executable Entry Price and Directional Structural SL
@@ -119,17 +134,26 @@ void OnTick()
    double lot_size = g_risk_manager.CalculateLotSize(g_symbol_info, signal.action, executable_entry, signal.stop_loss);
    if(lot_size <= 0.0)
    {
+      last_decision = "NO_TRADE";
+      last_reason   = "Invalid Lot Size";
       g_logger.Log(LOG_WARN, "OnTick", "Invalid calculated lot size. Execution skipped.");
+      g_dashboard.Update(last_decision, last_reason, g_setup_analyzer);
       return;
    }
 
    // 5. Execute Trade Signal
    if(g_trade_executor.ExecuteSignal(g_symbol_info, signal, lot_size))
    {
+      last_decision = (signal.action == SIGNAL_BUY) ? "BUY_EXECUTED" : "SELL_EXECUTED";
+      last_reason   = signal.reason;
       g_logger.Log(LOG_INFO, "OnTick", "Trade executed successfully.");
    }
    else
    {
+      last_decision = "EXECUTION_FAILED";
+      last_reason   = "OrderSend Error";
       g_logger.Log(LOG_ERROR, "OnTick", "Trade execution failed.");
    }
+
+   g_dashboard.Update(last_decision, last_reason, g_setup_analyzer);
 }

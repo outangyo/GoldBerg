@@ -52,6 +52,11 @@ private:
    datetime                     m_m5_extreme_bar_time;   // M5 Extreme Bar open time
    datetime                     m_last_evaluated_m5_bar; // Last closed M5 bar time evaluated
 
+   // Observability & Diagnostics (Read-only metadata)
+   string                       m_last_event;
+   datetime                     m_last_event_time;
+   string                       m_last_no_trade_reason;
+
    // Reset state machine back to MONITORING (Does NOT resurrect invalidated swings)
    void ResetToMonitoring()
    {
@@ -111,15 +116,21 @@ public:
       m_m5_extreme_bar_high(0.0),
       m_m5_extreme_bar_low(0.0),
       m_m5_extreme_bar_time(0),
-      m_last_evaluated_m5_bar(0)
+      m_last_evaluated_m5_bar(0),
+      m_last_event("INITIALIZED"),
+      m_last_event_time(0),
+      m_last_no_trade_reason("Monitoring Swings")
    {}
    ~CSetupAnalyzer() {}
 
    bool Init(ENUM_TIMEFRAMES context_tf = PERIOD_M15, ENUM_TIMEFRAMES confirm_tf = PERIOD_M5)
    {
-      m_context_tf = context_tf;
-      m_confirm_tf = confirm_tf;
+      m_context_tf           = context_tf;
+      m_confirm_tf           = confirm_tf;
       m_structure_tracker.Init(m_context_tf, 2); // Standard 5-bar fractal on M15
+      m_last_event           = "INITIALIZED";
+      m_last_event_time      = TimeCurrent();
+      m_last_no_trade_reason = "Monitoring Swings";
       ResetToMonitoring();
       return true;
    }
@@ -157,6 +168,9 @@ public:
             m_breach_extreme_price = current_bid;      // Initial breach extreme
             m_breach_extreme_time  = TimeCurrent();    // Actual extreme timestamp (Rule 3)
             m_state                = SWEEP_STATE_LEVEL_BREACHED;
+            m_last_event           = "LEVEL_BREACHED (Long)";
+            m_last_event_time      = m_breach_extreme_time;
+            m_last_no_trade_reason = "Awaiting M15 Bar Close";
 
             // Invalidate swing low so it cannot be resurrected (Rule 1)
             m_structure_tracker.InvalidateSwingLow(active_low.time);
@@ -176,6 +190,9 @@ public:
             m_breach_extreme_price = current_ask;       // Initial breach extreme
             m_breach_extreme_time  = TimeCurrent();     // Actual extreme timestamp (Rule 3)
             m_state                = SWEEP_STATE_LEVEL_BREACHED;
+            m_last_event           = "LEVEL_BREACHED (Short)";
+            m_last_event_time      = m_breach_extreme_time;
+            m_last_no_trade_reason = "Awaiting M15 Bar Close";
 
             // Invalidate swing high so it cannot be resurrected (Rule 1)
             m_structure_tracker.InvalidateSwingHigh(active_high.time);
@@ -185,6 +202,7 @@ public:
             return false;
          }
 
+         m_last_no_trade_reason = "Monitoring Swings";
          return false; // Still monitoring
       }
 
@@ -200,6 +218,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Same-direction new Swing Low confirmed at %s (%f). Expiring active sweep.",
                         TimeToString(new_swing.time), new_swing.price);
+            m_last_event           = "SWEEP_EXPIRED (New Swing)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Same-direction New Swing";
             m_structure_tracker.AdoptNewSwingLow(new_swing);
             ResetToMonitoring();
             return false;
@@ -208,6 +229,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Same-direction new Swing High confirmed at %s (%f). Expiring active sweep.",
                         TimeToString(new_swing.time), new_swing.price);
+            m_last_event           = "SWEEP_EXPIRED (New Swing)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Same-direction New Swing";
             m_structure_tracker.AdoptNewSwingHigh(new_swing);
             ResetToMonitoring();
             return false;
@@ -238,6 +262,7 @@ public:
          // If breaching M15 bar hasn't closed yet, wait (Rule 4)
          if(current_m15_time <= m_breach_m15_bar_time)
          {
+            m_last_no_trade_reason = "Awaiting M15 Bar Close";
             return false;
          }
 
@@ -252,6 +277,9 @@ public:
                // STRUCTURE_BREAK -> NO TRADE (Rule 5)
                PrintFormat("[SetupAnalyzer] STRUCTURE_BREAK (Long) | Close: %f < Ref: %f. Resetting.",
                            m15_close, m_ref_price);
+               m_last_event           = "STRUCTURE_BREAK (Long)";
+               m_last_event_time      = TimeCurrent();
+               m_last_no_trade_reason = "M15 Structure Break";
                ResetToMonitoring();
                return false;
             }
@@ -262,6 +290,9 @@ public:
                m_extreme_price          = m_breach_extreme_price; // Rule 2: strictly tick-tracked extreme
                m_extreme_time           = m_breach_extreme_time;  // Rule 3: actual extreme timestamp
                m_reclaim_confirmed_time = current_m15_time;       // Rule 7: reclaim confirmed at new M15 bar open
+               m_last_event             = "M15 RECLAIM (Long)";
+               m_last_event_time        = current_m15_time;
+               m_last_no_trade_reason   = "Awaiting M5 Confirmation";
 
                PrintFormat("[SetupAnalyzer] RECLAIM_CANDIDATE (Long) | Close: %f >= Ref: %f | Frozen Extreme_Price: %f | Extreme_Time: %s",
                            m15_close, m_ref_price, m_extreme_price, TimeToString(m_extreme_time));
@@ -282,6 +313,9 @@ public:
                // STRUCTURE_BREAK -> NO TRADE (Rule 6)
                PrintFormat("[SetupAnalyzer] STRUCTURE_BREAK (Short) | Close: %f > Ref: %f. Resetting.",
                            m15_close, m_ref_price);
+               m_last_event           = "STRUCTURE_BREAK (Short)";
+               m_last_event_time      = TimeCurrent();
+               m_last_no_trade_reason = "M15 Structure Break";
                ResetToMonitoring();
                return false;
             }
@@ -292,6 +326,9 @@ public:
                m_extreme_price          = m_breach_extreme_price; // Rule 2: strictly tick-tracked extreme
                m_extreme_time           = m_breach_extreme_time;  // Rule 3: actual extreme timestamp
                m_reclaim_confirmed_time = current_m15_time;       // Rule 7: reclaim confirmed at new M15 bar open
+               m_last_event             = "M15 RECLAIM (Short)";
+               m_last_event_time        = current_m15_time;
+               m_last_no_trade_reason   = "Awaiting M5 Confirmation";
 
                PrintFormat("[SetupAnalyzer] RECLAIM_CANDIDATE (Short) | Close: %f <= Ref: %f | Frozen Extreme_Price: %f | Extreme_Time: %s",
                            m15_close, m_ref_price, m_extreme_price, TimeToString(m_extreme_time));
@@ -317,6 +354,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Same-direction new Swing Low confirmed at %s (%f). Expiring reclaim candidate.",
                         TimeToString(new_swing.time), new_swing.price);
+            m_last_event           = "SWEEP_EXPIRED (New Swing)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Same-direction New Swing";
             m_structure_tracker.AdoptNewSwingLow(new_swing);
             ResetToMonitoring();
             return false;
@@ -325,6 +365,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Same-direction new Swing High confirmed at %s (%f). Expiring reclaim candidate.",
                         TimeToString(new_swing.time), new_swing.price);
+            m_last_event           = "SWEEP_EXPIRED (New Swing)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Same-direction New Swing";
             m_structure_tracker.AdoptNewSwingHigh(new_swing);
             ResetToMonitoring();
             return false;
@@ -338,6 +381,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Long setup invalidated: Current Bid (%f) broke below frozen Extreme_Price (%f).",
                         current_bid, m_extreme_price);
+            m_last_event           = "EXTREME_INVALIDATED (Long)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Price Broke Extreme";
             ResetToMonitoring();
             return false;
          }
@@ -345,6 +391,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Short setup invalidated: Current Ask (%f) broke above frozen Extreme_Price (%f).",
                         current_ask, m_extreme_price);
+            m_last_event           = "EXTREME_INVALIDATED (Short)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Price Broke Extreme";
             ResetToMonitoring();
             return false;
          }
@@ -357,12 +406,14 @@ public:
          // If the closed M5 bar opened prior to M15 reclaim confirmation, it cannot confirm
          if(m5_closed_time < m_reclaim_confirmed_time)
          {
+            m_last_no_trade_reason = "Awaiting M5 Confirmation";
             return false;
          }
 
          // Ensure each eligible closed M5 bar is evaluated only once
          if(m5_closed_time <= m_last_evaluated_m5_bar)
          {
+            m_last_no_trade_reason = "Awaiting M5 Confirmation";
             return false;
          }
          m_last_evaluated_m5_bar = m5_closed_time;
@@ -376,6 +427,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Long setup invalidated: Closed M5 low (%f) broke below Extreme_Price (%f).",
                         m5_low, m_extreme_price);
+            m_last_event           = "EXTREME_INVALIDATED (Long M5 Low)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Price Broke Extreme";
             ResetToMonitoring();
             return false;
          }
@@ -383,6 +437,9 @@ public:
          {
             PrintFormat("[SetupAnalyzer] Short setup invalidated: Closed M5 high (%f) broke above Extreme_Price (%f).",
                         m5_high, m_extreme_price);
+            m_last_event           = "EXTREME_INVALIDATED (Short M5 High)";
+            m_last_event_time      = TimeCurrent();
+            m_last_no_trade_reason = "Price Broke Extreme";
             ResetToMonitoring();
             return false;
          }
@@ -413,6 +470,10 @@ public:
                out_signal.take_profit       = ask + (sl_dist * 1.5); // Rule 11: RR_Target = 1.5
                out_signal.risk_reward_ratio = 1.5;
                out_signal.reason            = "M15_SWEEP_M5_CONFIRMED_BUY";
+
+               m_last_event           = "M5 CONFIRMATION (BUY)";
+               m_last_event_time      = TimeCurrent();
+               m_last_no_trade_reason = "Signal Generated (BUY)";
 
                PrintFormat("[SetupAnalyzer][SIGNAL BUY] M5 Close %f > Extreme Bar High %f | Entry(Ask): %f | SL: %f | TP: %f | RR: 1.5",
                            m5_close, m_m5_extreme_bar_high, ask, out_signal.stop_loss, out_signal.take_profit);
@@ -447,6 +508,10 @@ public:
                out_signal.risk_reward_ratio = 1.5;
                out_signal.reason            = "M15_SWEEP_M5_CONFIRMED_SELL";
 
+               m_last_event           = "M5 CONFIRMATION (SELL)";
+               m_last_event_time      = TimeCurrent();
+               m_last_no_trade_reason = "Signal Generated (SELL)";
+
                PrintFormat("[SetupAnalyzer][SIGNAL SELL] M5 Close %f < Extreme Bar Low %f | Entry(Bid): %f | SL: %f | TP: %f | RR: 1.5",
                            m5_close, m_m5_extreme_bar_low, bid, out_signal.stop_loss, out_signal.take_profit);
 
@@ -465,7 +530,13 @@ public:
       return EvaluateSetup(symbol, out_signal);
    }
 
-   // Status getters
-   ENUM_SWEEP_LIFECYCLE_STATE GetCurrentState() const { return m_state; }
-   ENUM_SWEEP_DIRECTION      GetDirection()    const { return m_direction; }
+   // Status & Diagnostic getters (Read-only for Observer Dashboard)
+   ENUM_SWEEP_LIFECYCLE_STATE GetCurrentState()       const { return m_state; }
+   ENUM_SWEEP_DIRECTION      GetDirection()          const { return m_direction; }
+   double                    GetReferencePrice()     const { return m_ref_price; }
+   double                    GetExtremePrice()       const { return (m_state >= SWEEP_STATE_RECLAIM_CANDIDATE) ? m_extreme_price : m_breach_extreme_price; }
+   datetime                  GetExtremeTime()        const { return (m_state >= SWEEP_STATE_RECLAIM_CANDIDATE) ? m_extreme_time : m_breach_extreme_time; }
+   string                    GetLastEvent()          const { return m_last_event; }
+   datetime                  GetLastEventTime()      const { return m_last_event_time; }
+   string                    GetLastNoTradeReason()  const { return m_last_no_trade_reason; }
 };
