@@ -20,12 +20,12 @@ Automated Trading Expert Advisor (EA) สำหรับ MT5 / MQL5 บน XAUUS
 
 ---
 
-## 4. Multi-Timeframe Framework (Conceptual Only)
-> **Note**: โครงสร้าง Multi-Timeframe ด้านล่างนี้ยังเป็นเพียง **Conceptual Framework** เท่านั้น **Quantitative Rules ยังไม่ finalized**
+## 4. Multi-Timeframe Framework (V1 Locked Baseline)
+> **Note**: ใน V1 Baseline Pipeline ถูกล็อกไว้ที่ **M15 Sweep $\rightarrow$ M5 Causal Confirmation $\rightarrow$ Risk $\rightarrow$ Execution** (M1 Confirmation ถูกถอดออกจาก V1 Execution Path และ Parked ไว้สำหรับการวิจัยในอนาคต)
 
-- **M15 (Market Context)**: Conceptual trend direction, Market Structure (HH/HL/LH/LL) -> BULLISH / BEARISH / NEUTRAL
-- **M5 (Setup Detection)**: Conceptual pullback detection, Relevant price zones, Structure validation
-- **M1 (Entry Confirmation)**: Conceptual timing, Liquidity sweeps, Short-term structure break, Momentum confirmation
+- **M15 (Sweep & Structure Lifecycle)**: ค้นหา Confirmed Swings, ตรวจจับ Tick Breach, แทร็ก Extreme Price/Time และยืนยัน Reclaim บนแท่ง M15 ที่ปิดตัว
+- **M5 (Causal Confirmation)**: ตรวจสอบแท่ง M5 ปิดทะลุ M5 Extreme Bar High/Low หลัง M15 Reclaim ยืนยันสำเร็จ
+- **M1 (Parked / Future Candidate)**: ไม่อยู่ใน V1 Execution Pipeline
 
 ---
 

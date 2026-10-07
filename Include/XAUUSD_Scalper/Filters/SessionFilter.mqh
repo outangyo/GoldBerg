@@ -8,12 +8,13 @@
 
 //+------------------------------------------------------------------+
 //| SAFETY DOCUMENTATION:                                            |
+//| STATUS: DISABLED / PLACEHOLDER IN V1 BASELINE                    |
 //| CSessionFilter checks current broker server time (TimeCurrent).  |
 //|                                                                  |
-//| NOTE ON SESSION HOURS:                                           |
-//| Default 08:00 - 22:00 is a TEMPORARY PLACEHOLDER in broker time. |
-//| Final session hours are NOT YET APPROVED and await Strategy      |
-//| Specification V1 approval.                                       |
+//| V1 DECISION:                                                     |
+//| Session Filter is NOT a strategy gate in the V1 Baseline. It is  |
+//| decoupled from the trade execution path to allow 24-hour baseline|
+//| evaluation of pure price action without hidden session rules.    |
 //+------------------------------------------------------------------+
 class CSessionFilter
 {
@@ -25,9 +26,9 @@ private:
    int  m_end_minute;
 
 public:
-   // Default 08:00 - 22:00 is a Temporary Placeholder - pending Strategy Spec V1 approval
+   // Default 08:00 - 22:00 is a placeholder for future session research
    CSessionFilter() :
-      m_use_session_filter(true),
+      m_use_session_filter(false),
       m_start_hour(8),
       m_start_minute(0),
       m_end_hour(22),

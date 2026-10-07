@@ -10,13 +10,13 @@
 
 //+------------------------------------------------------------------+
 //| SAFETY DOCUMENTATION:                                            |
-//| STATUS: PARKED / Future Candidate.                               |
-//| This module is intentionally non-functional and is NOT active in  |
-//| the V1 trade decision pipeline (V1 pipeline: M15 -> M5 -> Risk). |
-//| They must not be considered approved trading logic.              |
-//| No strategy assumptions, indicators, thresholds, or heuristics  |
-//| should be added until the corresponding section of               |
-//| XAUUSD_SCALPER_STRATEGY_SPEC_V1 is approved.                     |
+//| STATUS: PARKED / DEPRECATED FROM V1 BUILD PATH                   |
+//| M1 Confirmation is explicitly NOT PART of the V1 Baseline        |
+//| execution pipeline (V1 Pipeline: M15 Sweep -> M5 Causal Conf ->  |
+//| Risk -> Execution).                                              |
+//| This module is decoupled from the V1 execution path and kept     |
+//| solely for future architectural research. It MUST NOT be used    |
+//| as a trade confirmation gate in V1.                              |
 //+------------------------------------------------------------------+
 class CEntryAnalyzer
 {
@@ -33,15 +33,11 @@ public:
       return true;
    }
 
-   // Evaluate M1 Entry timing and structure confirmation
-   // Deliberate Placeholder: Returns false (NO SIGNAL) until approved Strategy Spec rules are implemented.
+   // Parked placeholder
    bool EvaluateEntry(string symbol, ENUM_SETUP_STATUS setup, TradeSignal &out_signal)
    {
       out_signal.action = SIGNAL_NONE;
-      out_signal.reason = "NO_SIGNAL";
-
-      if(setup == SETUP_NONE) return false;
-
+      out_signal.reason = "PARKED_MODULE";
       return false;
    }
 };

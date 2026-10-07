@@ -8,14 +8,14 @@
 
 //+------------------------------------------------------------------+
 //| SAFETY DOCUMENTATION:                                            |
-//| CSpreadFilter checks realtime spread in Points using              |
+//| STATUS: OBSERVATION / LOGGING UTILITY ONLY IN V1 BASELINE        |
+//| CSpreadFilter inspects realtime spread in points using            |
 //| SymbolInfoInteger(symbol, SYMBOL_SPREAD).                        |
 //|                                                                  |
-//| NOTE ON THRESHOLD:                                               |
-//| The default 500.0 points value is a TEMPORARY PLACEHOLDER.       |
-//| The final spread threshold is NOT YET APPROVED and must be       |
-//| determined based on actual XM XAUUSD symbol specifications and   |
-//| Strategy Specification V1 approval.                              |
+//| V1 DECISION:                                                     |
+//| Spread is recorded for execution observation and diagnostics      |
+//| ONLY. It is NOT a hard strategy gate or NO_TRADE filter in the    |
+//| V1 Baseline.                                                     |
 //+------------------------------------------------------------------+
 class CSpreadFilter
 {
@@ -23,7 +23,7 @@ private:
    double m_max_spread_points;
 
 public:
-   // Default 500.0 points is a Temporary Placeholder - pending Strategy Spec V1 approval
+   // Default 500.0 points is an observation threshold placeholder
    CSpreadFilter() : m_max_spread_points(500.0) {}
    ~CSpreadFilter() {}
 

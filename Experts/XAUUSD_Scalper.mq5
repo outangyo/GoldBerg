@@ -1,21 +1,19 @@
 //+------------------------------------------------------------------+
 //|                                               XAUUSD_Scalper.mq5 |
 //|                                  Copyright 2026, XAUUSD Scalper  |
-//|                                             Framework Version 0.0 |
+//|                                             Baseline Version 1.0 |
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2026, XAUUSD Scalper"
 #property link      ""
-#property version   "0.01"
-#property description "XAUUSD Multi-Timeframe Strategy-First Scalper Framework"
+#property version   "1.00"
+#property description "XAUUSD V1 Locked Baseline: M15 Sweep -> M5 Causal Confirmation -> Risk -> Execution"
 
-//--- Includes
+//--- Includes (Active V1 Build Path)
 #include "../Include/XAUUSD_Scalper/Core/Defines.mqh"
 #include "../Include/XAUUSD_Scalper/Core/SymbolInfoHelper.mqh"
 #include "../Include/XAUUSD_Scalper/Filters/SpreadFilter.mqh"
 #include "../Include/XAUUSD_Scalper/Filters/SessionFilter.mqh"
-#include "../Include/XAUUSD_Scalper/Analysis/ContextAnalyzer.mqh"
 #include "../Include/XAUUSD_Scalper/Analysis/SetupAnalyzer.mqh"
-#include "../Include/XAUUSD_Scalper/Analysis/EntryAnalyzer.mqh"
 #include "../Include/XAUUSD_Scalper/Risk/RiskManager.mqh"
 #include "../Include/XAUUSD_Scalper/Trade/TradeExecutor.mqh"
 #include "../Include/XAUUSD_Scalper/Utils/Logger.mqh"
@@ -24,27 +22,25 @@
 input group "=== General Settings ==="
 input ulong    InpMagicNumber       = 100888;    // EA Magic Number
 
-input group "=== Risk Management (Temporary Placeholders) ==="
-input double   InpRiskPercent       = 1.0;       // Risk % Per Trade [TEMPORARY PLACEHOLDER]
-input double   InpMaxDailyLossPct   = 3.0;       // Max Daily Loss % [TEMPORARY PLACEHOLDER]
-input int      InpMaxOpenTrades     = 1;         // Max Open Trades [TEMPORARY PLACEHOLDER]
-input int      InpMaxLosses         = 3;         // Max Consecutive Losses [TEMPORARY PLACEHOLDER]
+input group "=== Risk Management ==="
+input double   InpRiskPercent       = 1.0;       // Risk % Per Trade
+input int      InpMaxOpenTrades     = 1;         // Max Open Trades (V1 Baseline = 1)
+input double   InpMaxDailyLossPct   = 3.0;       // Max Daily Loss % [UNIMPLEMENTED / FUTURE CANDIDATE]
+input int      InpMaxLosses         = 3;         // Max Consecutive Losses [UNIMPLEMENTED / FUTURE CANDIDATE]
 
-input group "=== Filters (Temporary Placeholders) ==="
-input double   InpMaxSpreadPoints   = 500.0;     // Max Spread in Points (1 Point = SYMBOL_POINT e.g. 0.01) [TEMPORARY PLACEHOLDER]
-input bool     InpUseSessionFilter  = true;      // Enable Session Filter [TEMPORARY PLACEHOLDER]
-input int      InpStartHour         = 8;         // Session Start Hour (Broker Server Time) [TEMPORARY PLACEHOLDER]
-input int      InpStartMin          = 0;         // Session Start Minute [TEMPORARY PLACEHOLDER]
-input int      InpEndHour           = 22;        // Session End Hour (Broker Server Time) [TEMPORARY PLACEHOLDER]
-input int      InpEndMin            = 0;         // Session End Minute [TEMPORARY PLACEHOLDER]
+input group "=== Observation & Diagnostics (Non-Blocking in V1 Baseline) ==="
+input double   InpMaxSpreadPoints   = 500.0;     // [OBSERVATION ONLY] Diagnostic Spread Threshold (Points)
+input bool     InpUseSessionFilter  = false;     // [DISABLED IN V1 BASELINE] Session filter is not a strategy gate
+input int      InpStartHour         = 8;         // [DISABLED / UNUSED IN V1]
+input int      InpStartMin          = 0;         // [DISABLED / UNUSED IN V1]
+input int      InpEndHour           = 22;        // [DISABLED / UNUSED IN V1]
+input int      InpEndMin            = 0;         // [DISABLED / UNUSED IN V1]
 
-//--- Global Engine Objects
+//--- Global Engine Objects (Active V1 Baseline)
 CSymbolInfoHelper g_symbol_info;
 CSpreadFilter     g_spread_filter;
 CSessionFilter     g_session_filter;
-CContextAnalyzer  g_context_analyzer;
 CSetupAnalyzer    g_setup_analyzer;
-CEntryAnalyzer    g_entry_analyzer;
 CRiskManager      g_risk_manager;
 CTradeExecutor    g_trade_executor;
 CLogger           g_logger;
@@ -54,7 +50,7 @@ CLogger           g_logger;
 //+------------------------------------------------------------------+
 int OnInit()
 {
-   g_logger.Log(LOG_INFO, "OnInit", "Initializing XAUUSD Scalper EA Framework V0.0...");
+   g_logger.Log(LOG_INFO, "OnInit", "Initializing XAUUSD Scalper EA Baseline V1.0...");
 
    // 1. Symbol Spec Inspection
    if(!g_symbol_info.Init(_Symbol))
@@ -63,16 +59,14 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   // 2. Configure Filters
+   // 2. Configure Filters (Observation/Diagnostic)
    g_spread_filter.SetMaxSpreadPoints(InpMaxSpreadPoints);
    g_session_filter.Configure(InpUseSessionFilter, InpStartHour, InpStartMin, InpEndHour, InpEndMin);
 
-   // 3. Configure Analyzers
-   if(!g_context_analyzer.Init(PERIOD_M15) ||
-      !g_setup_analyzer.Init(PERIOD_M5)    ||
-      !g_entry_analyzer.Init(PERIOD_M1))
+   // 3. Configure Setup Analyzer (M15 Sweep Lifecycle & M5 Causal Confirmation)
+   if(!g_setup_analyzer.Init(PERIOD_M15, PERIOD_M5))
    {
-      g_logger.Log(LOG_ERROR, "OnInit", "Failed to initialize MTF Analyzers.");
+      g_logger.Log(LOG_ERROR, "OnInit", "Failed to initialize Setup Analyzer.");
       return INIT_FAILED;
    }
 
@@ -84,7 +78,7 @@ int OnInit()
       return INIT_FAILED;
    }
 
-   g_logger.Log(LOG_INFO, "OnInit", "Initialization successful.");
+   g_logger.Log(LOG_INFO, "OnInit", "Initialization successful. Ready for V1 Baseline execution.");
    return INIT_SUCCEEDED;
 }
 
@@ -101,26 +95,26 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
 {
-   // V1 Target Pipeline: M15 Context -> M5 Setup -> Risk -> Execution
+   // V1 Locked Pipeline: M15 Sweep -> M5 Causal Confirmation -> Risk -> Execution
    
-   // 1. Observation / Logging (Spread is observation only - NOT a trade blocking gate)
+   // 1. Observation / Diagnostics (Spread is observation only - NOT a trade blocking gate)
    double current_spread = 0.0;
    g_spread_filter.IsPassed(_Symbol, current_spread);
 
    // 2. Risk Criteria Check (Active Position Scope)
    if(!g_risk_manager.ValidateGeneralRisk(_Symbol))
    {
-      return; // Max open trades or risk limits exceeded -> NO TRADE
+      return; // Max open trades reached -> NO TRADE
    }
 
-   // 3. M15 Sweep Lifecycle & M5 Confirmation (V1 Pipeline: M15 -> M5 -> Risk -> Execution)
+   // 3. M15 Sweep Lifecycle & M5 Causal Confirmation
    TradeSignal signal;
    if(!g_setup_analyzer.EvaluateSetup(_Symbol, signal))
    {
-      return; // No valid Setup -> NO TRADE
+      return; // No confirmed Setup -> NO TRADE
    }
 
-   // 5. Calculate Dynamic Lot Size from Executable Entry Price and Directional Structural SL
+   // 4. Calculate Dynamic Lot Size from Executable Entry Price and Directional Structural SL
    double executable_entry = (signal.action == SIGNAL_BUY) ? SymbolInfoDouble(_Symbol, SYMBOL_ASK) : SymbolInfoDouble(_Symbol, SYMBOL_BID);
    double lot_size = g_risk_manager.CalculateLotSize(g_symbol_info, signal.action, executable_entry, signal.stop_loss);
    if(lot_size <= 0.0)
@@ -129,7 +123,7 @@ void OnTick()
       return;
    }
 
-   // 6. Execute Trade Signal
+   // 5. Execute Trade Signal
    if(g_trade_executor.ExecuteSignal(g_symbol_info, signal, lot_size))
    {
       g_logger.Log(LOG_INFO, "OnTick", "Trade executed successfully.");
