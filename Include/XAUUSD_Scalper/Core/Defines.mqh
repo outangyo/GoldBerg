@@ -45,3 +45,33 @@ struct TradeSignal
    double             risk_reward_ratio;
    string             reason;
 };
+
+//--- Risk Rejection Reasons for Signal Funnel Diagnostic
+enum ENUM_RISK_REJECTION_REASON
+{
+   REJECT_NONE = 0,
+   REJECT_BELOW_MINIMUM_VOLUME,
+   REJECT_INVALID_ENTRY,
+   REJECT_INVALID_SL,
+   REJECT_ORDER_CALC_PROFIT_FAIL,
+   REJECT_ZERO_OR_INVALID_RISK,
+   REJECT_MAX_OPEN_TRADES,
+   REJECT_OTHER
+};
+
+// Helper: Convert rejection reason enum to readable string
+inline string RiskRejectionReasonToString(ENUM_RISK_REJECTION_REASON reason)
+{
+   switch(reason)
+   {
+      case REJECT_BELOW_MINIMUM_VOLUME:    return "BELOW_MINIMUM_VOLUME";
+      case REJECT_INVALID_ENTRY:           return "INVALID_ENTRY";
+      case REJECT_INVALID_SL:              return "INVALID_SL";
+      case REJECT_ORDER_CALC_PROFIT_FAIL:  return "ORDER_CALC_PROFIT_FAIL";
+      case REJECT_ZERO_OR_INVALID_RISK:    return "ZERO_OR_INVALID_RISK";
+      case REJECT_MAX_OPEN_TRADES:         return "MAX_OPEN_TRADES";
+      case REJECT_OTHER:                   return "OTHER";
+      case REJECT_NONE:
+      default:                             return "NONE";
+   }
+}

@@ -9,6 +9,7 @@
 
 #include "../Core/Defines.mqh"
 #include "StructureTracker.mqh"
+#include "../Utils/DiagnosticTracker.mqh"
 
 //--- M15 Sweep Lifecycle State Machine
 enum ENUM_SWEEP_LIFECYCLE_STATE
@@ -56,6 +57,7 @@ private:
    string                       m_last_event;
    datetime                     m_last_event_time;
    string                       m_last_no_trade_reason;
+   CDiagnosticTracker          *m_diagnostic_tracker;   // Optional signal funnel diagnostic tracker
 
    // Reset state machine back to MONITORING (Does NOT resurrect invalidated swings)
    void ResetToMonitoring()
@@ -79,7 +81,11 @@ private:
    // Identify M5 Extreme Bar using actual frozen Extreme_Time (Rule 4)
    bool IdentifyM5ExtremeBar(string symbol)
    {
-      if(m_extreme_time == 0) return false;
+      if(m_extreme_time == 0)
+      {
+         if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM5ExtremeFailed();
+         return false;
+      }
 
       // Deterministic mapping: find the M5 bar containing the actual extreme timestamp
       int m5_shift = iBarShift(symbol, m_confirm_tf, m_extreme_time, false);
@@ -87,12 +93,15 @@ private:
       {
          PrintFormat("[SetupAnalyzer][ERROR] Could not find M5 bar shift for Extreme_Time: %s",
                      TimeToString(m_extreme_time));
+         if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM5ExtremeFailed();
          return false;
       }
 
       m_m5_extreme_bar_high = iHigh(symbol, m_confirm_tf, m5_shift);
       m_m5_extreme_bar_low  = iLow(symbol, m_confirm_tf, m5_shift);
       m_m5_extreme_bar_time = iTime(symbol, m_confirm_tf, m5_shift);
+
+      if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM5ExtremeIdentified();
 
       PrintFormat("[SetupAnalyzer] M5 Extreme Bar identified | Shift: %d | Time: %s | High: %f | Low: %f | Frozen SL: %f",
                   m5_shift, TimeToString(m_m5_extreme_bar_time), m_m5_extreme_bar_high, m_m5_extreme_bar_low, m_extreme_price);
@@ -119,9 +128,16 @@ public:
       m_last_evaluated_m5_bar(0),
       m_last_event("INITIALIZED"),
       m_last_event_time(0),
-      m_last_no_trade_reason("Monitoring Swings")
+      m_last_no_trade_reason("Monitoring Swings"),
+      m_diagnostic_tracker(NULL)
    {}
    ~CSetupAnalyzer() {}
+
+   // Attach optional signal funnel diagnostic tracker
+   void SetDiagnosticTracker(CDiagnosticTracker *tracker)
+   {
+      m_diagnostic_tracker = tracker;
+   }
 
    bool Init(ENUM_TIMEFRAMES context_tf = PERIOD_M15, ENUM_TIMEFRAMES confirm_tf = PERIOD_M5)
    {
@@ -161,6 +177,7 @@ public:
          // Long candidate: Current Bid breaches active M15 Swing Low (Rule 5: Bid <= SwingLow)
          if(active_low.is_active && active_low.price > 0.0 && current_bid <= active_low.price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15Sweep();
             m_direction            = SWEEP_DIR_LONG;
             m_ref_price            = active_low.price; // Retain reference
             m_ref_swing_time       = active_low.time;
@@ -183,6 +200,7 @@ public:
          // Short candidate: Current Ask breaches active M15 Swing High (Rule 5: Ask >= SwingHigh)
          if(active_high.is_active && active_high.price > 0.0 && current_ask >= active_high.price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15Sweep();
             m_direction            = SWEEP_DIR_SHORT;
             m_ref_price            = active_high.price; // Retain reference
             m_ref_swing_time       = active_high.time;
@@ -216,6 +234,7 @@ public:
          SwingPoint new_swing;
          if(m_direction == SWEEP_DIR_LONG && m_structure_tracker.CheckNewConfirmedSwingLow(symbol, m_ref_swing_time, new_swing))
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15SweepExpired();
             PrintFormat("[SetupAnalyzer] Same-direction new Swing Low confirmed at %s (%f). Expiring active sweep.",
                         TimeToString(new_swing.time), new_swing.price);
             m_last_event           = "SWEEP_EXPIRED (New Swing)";
@@ -227,6 +246,7 @@ public:
          }
          else if(m_direction == SWEEP_DIR_SHORT && m_structure_tracker.CheckNewConfirmedSwingHigh(symbol, m_ref_swing_time, new_swing))
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15SweepExpired();
             PrintFormat("[SetupAnalyzer] Same-direction new Swing High confirmed at %s (%f). Expiring active sweep.",
                         TimeToString(new_swing.time), new_swing.price);
             m_last_event           = "SWEEP_EXPIRED (New Swing)";
@@ -274,6 +294,7 @@ public:
          {
             if(m15_close < m_ref_price)
             {
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15StructureBreak();
                // STRUCTURE_BREAK -> NO TRADE (Rule 5)
                PrintFormat("[SetupAnalyzer] STRUCTURE_BREAK (Long) | Close: %f < Ref: %f. Resetting.",
                            m15_close, m_ref_price);
@@ -285,6 +306,7 @@ public:
             }
             else // m15_close >= m_ref_price
             {
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15Reclaim();
                // RECLAIM_CANDIDATE: Freeze tick-tracked Extreme_Price and Extreme_Time (Rule 2 & 3)
                m_state                  = SWEEP_STATE_RECLAIM_CANDIDATE;
                m_extreme_price          = m_breach_extreme_price; // Rule 2: strictly tick-tracked extreme
@@ -310,6 +332,7 @@ public:
          {
             if(m15_close > m_ref_price)
             {
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15StructureBreak();
                // STRUCTURE_BREAK -> NO TRADE (Rule 6)
                PrintFormat("[SetupAnalyzer] STRUCTURE_BREAK (Short) | Close: %f > Ref: %f. Resetting.",
                            m15_close, m_ref_price);
@@ -321,6 +344,7 @@ public:
             }
             else // m15_close <= m_ref_price
             {
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM15Reclaim();
                // RECLAIM_CANDIDATE: Freeze tick-tracked Extreme_Price and Extreme_Time (Rule 2 & 3)
                m_state                  = SWEEP_STATE_RECLAIM_CANDIDATE;
                m_extreme_price          = m_breach_extreme_price; // Rule 2: strictly tick-tracked extreme
@@ -352,6 +376,7 @@ public:
          SwingPoint new_swing;
          if(m_direction == SWEEP_DIR_LONG && m_structure_tracker.CheckNewConfirmedSwingLow(symbol, m_ref_swing_time, new_swing))
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncReclaimExpired();
             PrintFormat("[SetupAnalyzer] Same-direction new Swing Low confirmed at %s (%f). Expiring reclaim candidate.",
                         TimeToString(new_swing.time), new_swing.price);
             m_last_event           = "SWEEP_EXPIRED (New Swing)";
@@ -363,6 +388,7 @@ public:
          }
          else if(m_direction == SWEEP_DIR_SHORT && m_structure_tracker.CheckNewConfirmedSwingHigh(symbol, m_ref_swing_time, new_swing))
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncReclaimExpired();
             PrintFormat("[SetupAnalyzer] Same-direction new Swing High confirmed at %s (%f). Expiring reclaim candidate.",
                         TimeToString(new_swing.time), new_swing.price);
             m_last_event           = "SWEEP_EXPIRED (New Swing)";
@@ -379,6 +405,7 @@ public:
 
          if(m_direction == SWEEP_DIR_LONG && current_bid < m_extreme_price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncExtremeInvalidated();
             PrintFormat("[SetupAnalyzer] Long setup invalidated: Current Bid (%f) broke below frozen Extreme_Price (%f).",
                         current_bid, m_extreme_price);
             m_last_event           = "EXTREME_INVALIDATED (Long)";
@@ -389,6 +416,7 @@ public:
          }
          else if(m_direction == SWEEP_DIR_SHORT && current_ask > m_extreme_price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncExtremeInvalidated();
             PrintFormat("[SetupAnalyzer] Short setup invalidated: Current Ask (%f) broke above frozen Extreme_Price (%f).",
                         current_ask, m_extreme_price);
             m_last_event           = "EXTREME_INVALIDATED (Short)";
@@ -425,6 +453,7 @@ public:
          // Invalidation check on closed M5 bar
          if(m_direction == SWEEP_DIR_LONG && m5_low < m_extreme_price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncExtremeInvalidated();
             PrintFormat("[SetupAnalyzer] Long setup invalidated: Closed M5 low (%f) broke below Extreme_Price (%f).",
                         m5_low, m_extreme_price);
             m_last_event           = "EXTREME_INVALIDATED (Long M5 Low)";
@@ -435,6 +464,7 @@ public:
          }
          else if(m_direction == SWEEP_DIR_SHORT && m5_high > m_extreme_price)
          {
+            if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncExtremeInvalidated();
             PrintFormat("[SetupAnalyzer] Short setup invalidated: Closed M5 high (%f) broke above Extreme_Price (%f).",
                         m5_high, m_extreme_price);
             m_last_event           = "EXTREME_INVALIDATED (Short M5 High)";
@@ -463,6 +493,8 @@ public:
                   ResetToMonitoring();
                   return false;
                }
+
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM5BreakConfirmed();
 
                out_signal.action            = SIGNAL_BUY;
                out_signal.entry_price       = ask;
@@ -500,6 +532,8 @@ public:
                   ResetToMonitoring();
                   return false;
                }
+
+               if(m_diagnostic_tracker != NULL) m_diagnostic_tracker.IncM5BreakConfirmed();
 
                out_signal.action            = SIGNAL_SELL;
                out_signal.entry_price       = bid;

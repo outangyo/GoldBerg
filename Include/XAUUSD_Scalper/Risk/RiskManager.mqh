@@ -25,14 +25,18 @@ private:
    int    m_max_open_positions;
    int    m_max_consecutive_losses;
    ulong  m_magic_number;
+   ENUM_RISK_REJECTION_REASON m_last_rejection_code;
+   string m_last_rejection_reason;
 
 public:
    CRiskManager() :
-      m_risk_percent_per_trade(1.0),
+      m_risk_percent_per_trade(5.0),
       m_max_daily_loss_percent(3.0),
       m_max_open_positions(1),
       m_max_consecutive_losses(3),
-      m_magic_number(0)
+      m_magic_number(0),
+      m_last_rejection_code(REJECT_NONE),
+      m_last_rejection_reason("")
    {}
    ~CRiskManager() {}
 
@@ -71,6 +75,8 @@ public:
       }
       if(current_open >= m_max_open_positions)
       {
+         m_last_rejection_code   = REJECT_MAX_OPEN_TRADES;
+         m_last_rejection_reason = "MAX_OPEN_TRADES";
          return false; // Reached max open positions limit for this EA
       }
       return true;
@@ -80,7 +86,18 @@ public:
    double CalculateLotSize(CSymbolInfoHelper &symbol_info, ENUM_ORDER_TYPE order_type, double entry_price, double stop_loss_price)
    {
       // 1. Basic price validation
-      if(entry_price <= 0.0 || stop_loss_price <= 0.0) return 0.0;
+      if(entry_price <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_INVALID_ENTRY;
+         m_last_rejection_reason = "INVALID_ENTRY";
+         return 0.0;
+      }
+      if(stop_loss_price <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_INVALID_SL;
+         m_last_rejection_reason = "INVALID_SL";
+         return 0.0;
+      }
 
       // 2. Strict Entry / SL Direction Validation (No MathAbs direction assumption)
       if(order_type == ORDER_TYPE_BUY)
@@ -90,6 +107,8 @@ public:
          {
             PrintFormat("[RiskManager] Invalid BUY SL direction (SL: %f >= Entry: %f). Decision: NO_TRADE.",
                         stop_loss_price, entry_price);
+            m_last_rejection_code   = REJECT_INVALID_SL;
+            m_last_rejection_reason = "INVALID_SL";
             return 0.0;
          }
       }
@@ -100,21 +119,35 @@ public:
          {
             PrintFormat("[RiskManager] Invalid SELL SL direction (SL: %f <= Entry: %f). Decision: NO_TRADE.",
                         stop_loss_price, entry_price);
+            m_last_rejection_code   = REJECT_INVALID_SL;
+            m_last_rejection_reason = "INVALID_SL";
             return 0.0;
          }
       }
       else
       {
          // Non-executable order type
+         m_last_rejection_code   = REJECT_INVALID_ENTRY;
+         m_last_rejection_reason = "INVALID_ENTRY";
          return 0.0;
       }
 
       // 3. Risk budget based on Account Equity
       double equity = AccountInfoDouble(ACCOUNT_EQUITY);
-      if(equity <= 0.0) return 0.0;
+      if(equity <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_ZERO_OR_INVALID_RISK;
+         m_last_rejection_reason = "ZERO_OR_INVALID_RISK";
+         return 0.0;
+      }
 
       double allowed_risk_money = equity * (m_risk_percent_per_trade / 100.0);
-      if(allowed_risk_money <= 0.0) return 0.0;
+      if(allowed_risk_money <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_ZERO_OR_INVALID_RISK;
+         m_last_rejection_reason = "ZERO_OR_INVALID_RISK";
+         return 0.0;
+      }
 
       // 4. Broker-aware monetary loss calculation for 1.0 lot via OrderCalcProfit()
       string symbol = symbol_info.GetSymbol();
@@ -124,6 +157,8 @@ public:
       {
          PrintFormat("[RiskManager] OrderCalcProfit failed for %s (Error: %d). Decision: NO_TRADE.",
                      symbol, GetLastError());
+         m_last_rejection_code   = REJECT_ORDER_CALC_PROFIT_FAIL;
+         m_last_rejection_reason = "ORDER_CALC_PROFIT_FAIL";
          return 0.0;
       }
 
@@ -131,15 +166,44 @@ public:
       if(profit_at_sl >= 0.0)
       {
          PrintFormat("[RiskManager] Calculated profit at SL is non-negative (%f). Decision: NO_TRADE.", profit_at_sl);
+         m_last_rejection_code   = REJECT_ORDER_CALC_PROFIT_FAIL;
+         m_last_rejection_reason = "ORDER_CALC_PROFIT_FAIL";
          return 0.0;
       }
 
       double monetary_loss_per_lot = -profit_at_sl;
-      if(monetary_loss_per_lot <= 0.0) return 0.0;
+      if(monetary_loss_per_lot <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_ORDER_CALC_PROFIT_FAIL;
+         m_last_rejection_reason = "ORDER_CALC_PROFIT_FAIL";
+         return 0.0;
+      }
 
       // 5. Raw lot calculation and broker volume normalization
       double raw_lot = allowed_risk_money / monetary_loss_per_lot;
-      return symbol_info.NormalizeVolume(raw_lot);
+
+      // Diagnostic logging when raw calculated lot is strictly below broker minimum volume
+      if(raw_lot < symbol_info.GetVolMin())
+      {
+         double stop_dist_points = (symbol_info.GetPoint() > 0.0) ? (MathAbs(entry_price - stop_loss_price) / symbol_info.GetPoint()) : 0.0;
+         PrintFormat("[RiskManager][DIAGNOSTIC] NO_TRADE | Reason: BELOW_MINIMUM_VOLUME | Equity: %.2f | RiskPct: %.1f%% | RiskBudget: %.2f | Entry: %.2f | SL: %.2f | StopDistPoints: %.1f | RawLot: %.4f | MinLot: %.2f",
+                     equity, m_risk_percent_per_trade, allowed_risk_money, entry_price, stop_loss_price, stop_dist_points, raw_lot, symbol_info.GetVolMin());
+         m_last_rejection_code   = REJECT_BELOW_MINIMUM_VOLUME;
+         m_last_rejection_reason = "BELOW_MINIMUM_VOLUME";
+         return 0.0;
+      }
+
+      double final_lot = symbol_info.NormalizeVolume(raw_lot);
+      if(final_lot <= 0.0)
+      {
+         m_last_rejection_code   = REJECT_OTHER;
+         m_last_rejection_reason = "OTHER";
+         return 0.0;
+      }
+
+      m_last_rejection_code   = REJECT_NONE;
+      m_last_rejection_reason = "";
+      return final_lot;
    }
 
    // Overload accepting ENUM_SIGNAL_ACTION for seamless integration with TradeSignal
@@ -150,6 +214,12 @@ public:
       else if(action == SIGNAL_SELL)
          return CalculateLotSize(symbol_info, ORDER_TYPE_SELL, entry_price, stop_loss_price);
 
+      m_last_rejection_code   = REJECT_INVALID_ENTRY;
+      m_last_rejection_reason = "INVALID_ENTRY";
       return 0.0;
    }
+
+   // Read-only diagnostic getters for rejection code and reason
+   ENUM_RISK_REJECTION_REASON GetLastRejectionCode()   const { return m_last_rejection_code; }
+   string                     GetLastRejectionReason() const { return m_last_rejection_reason; }
 };

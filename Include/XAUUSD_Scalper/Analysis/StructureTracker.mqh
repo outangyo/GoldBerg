@@ -81,78 +81,102 @@ public:
       int max_scan   = MathMin(100, total_bars - m_swing_strength - 1);
 
       // 1. Search for newest confirmed Swing High (strictly newer than last invalidated swing high)
-      if(!m_swing_high.is_active)
+      for(int i = m_swing_strength + 1; i < max_scan; i++)
       {
-         for(int i = m_swing_strength + 1; i < max_scan; i++)
+         datetime bar_t = iTime(symbol, m_timeframe, i);
+         if(bar_t <= m_last_invalidated_high_time)
          {
-            datetime bar_t = iTime(symbol, m_timeframe, i);
-            if(bar_t <= m_last_invalidated_high_time)
+            // Reached historical invalidated swings - stop searching backwards
+            break;
+         }
+
+         // If an active swing high exists, and bar_t is <= active swing time,
+         // no strictly newer confirmed swing high exists in the scan window; retain existing active swing.
+         if(m_swing_high.is_active && bar_t <= m_swing_high.time)
+         {
+            break;
+         }
+
+         double high_i = iHigh(symbol, m_timeframe, i);
+         bool is_swing_high = true;
+
+         for(int j = 1; j <= m_swing_strength; j++)
+         {
+            if(high_i <= iHigh(symbol, m_timeframe, i - j) ||
+               high_i <= iHigh(symbol, m_timeframe, i + j))
             {
-               // Reached historical invalidated swings - stop searching backwards
+               is_swing_high = false;
                break;
             }
+         }
 
-            double high_i = iHigh(symbol, m_timeframe, i);
-            bool is_swing_high = true;
-
-            for(int j = 1; j <= m_swing_strength; j++)
+         if(is_swing_high)
+         {
+            if(m_swing_high.is_active)
             {
-               if(high_i <= iHigh(symbol, m_timeframe, i - j) ||
-                  high_i <= iHigh(symbol, m_timeframe, i + j))
-               {
-                  is_swing_high = false;
-                  break;
-               }
+               PrintFormat("[StructureTracker] Newer confirmed Swing High adopted at %s | Price: %f (Superseded: %s | %f)",
+                           TimeToString(bar_t), high_i, TimeToString(m_swing_high.time), m_swing_high.price);
             }
-
-            if(is_swing_high)
+            else
             {
-               m_swing_high.price     = high_i;
-               m_swing_high.time      = bar_t;
-               m_swing_high.bar_index = i;
-               m_swing_high.is_active = true;
                PrintFormat("[StructureTracker] New confirmed Swing High detected at %s | Price: %f",
                            TimeToString(bar_t), high_i);
-               break;
             }
+            m_swing_high.price     = high_i;
+            m_swing_high.time      = bar_t;
+            m_swing_high.bar_index = i;
+            m_swing_high.is_active = true;
+            break;
          }
       }
 
       // 2. Search for newest confirmed Swing Low (strictly newer than last invalidated swing low)
-      if(!m_swing_low.is_active)
+      for(int i = m_swing_strength + 1; i < max_scan; i++)
       {
-         for(int i = m_swing_strength + 1; i < max_scan; i++)
+         datetime bar_t = iTime(symbol, m_timeframe, i);
+         if(bar_t <= m_last_invalidated_low_time)
          {
-            datetime bar_t = iTime(symbol, m_timeframe, i);
-            if(bar_t <= m_last_invalidated_low_time)
+            // Reached historical invalidated swings - stop searching backwards
+            break;
+         }
+
+         // If an active swing low exists, and bar_t is <= active swing time,
+         // no strictly newer confirmed swing low exists in the scan window; retain existing active swing.
+         if(m_swing_low.is_active && bar_t <= m_swing_low.time)
+         {
+            break;
+         }
+
+         double low_i = iLow(symbol, m_timeframe, i);
+         bool is_swing_low = true;
+
+         for(int j = 1; j <= m_swing_strength; j++)
+         {
+            if(low_i >= iLow(symbol, m_timeframe, i - j) ||
+               low_i >= iLow(symbol, m_timeframe, i + j))
             {
-               // Reached historical invalidated swings - stop searching backwards
+               is_swing_low = false;
                break;
             }
+         }
 
-            double low_i = iLow(symbol, m_timeframe, i);
-            bool is_swing_low = true;
-
-            for(int j = 1; j <= m_swing_strength; j++)
+         if(is_swing_low)
+         {
+            if(m_swing_low.is_active)
             {
-               if(low_i >= iLow(symbol, m_timeframe, i - j) ||
-                  low_i >= iLow(symbol, m_timeframe, i + j))
-               {
-                  is_swing_low = false;
-                  break;
-               }
+               PrintFormat("[StructureTracker] Newer confirmed Swing Low adopted at %s | Price: %f (Superseded: %s | %f)",
+                           TimeToString(bar_t), low_i, TimeToString(m_swing_low.time), m_swing_low.price);
             }
-
-            if(is_swing_low)
+            else
             {
-               m_swing_low.price     = low_i;
-               m_swing_low.time      = bar_t;
-               m_swing_low.bar_index = i;
-               m_swing_low.is_active = true;
                PrintFormat("[StructureTracker] New confirmed Swing Low detected at %s | Price: %f",
                            TimeToString(bar_t), low_i);
-               break;
             }
+            m_swing_low.price     = low_i;
+            m_swing_low.time      = bar_t;
+            m_swing_low.bar_index = i;
+            m_swing_low.is_active = true;
+            break;
          }
       }
    }

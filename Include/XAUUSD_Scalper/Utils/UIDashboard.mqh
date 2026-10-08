@@ -9,6 +9,7 @@
 
 #include "../Core/Defines.mqh"
 #include "../Analysis/SetupAnalyzer.mqh"
+#include "DiagnosticTracker.mqh"
 
 //+------------------------------------------------------------------+
 //| SAFETY & ARCHITECTURAL BOUNDARY:                                 |
@@ -261,7 +262,7 @@ public:
       m_base_y(25),
       m_corner(CORNER_LEFT_UPPER),
       m_width(330),
-      m_height(490),
+      m_height(580),
       m_initial_balance(0.0),
       m_peak_equity(0.0),
       m_max_dd(0.0),
@@ -327,7 +328,7 @@ public:
    }
 
    // Main read-only observer update
-   void Update(const string last_decision, const string last_decision_reason, const CSetupAnalyzer &setup)
+   void Update(const string last_decision, const string last_decision_reason, const CSetupAnalyzer &setup, const CDiagnosticTracker *funnel = NULL)
    {
       // Optimization: Completely skip UI operations during headless non-visual backtests
       bool is_visual = (MQLInfoInteger(MQL_TESTER) == 0) || (MQLInfoInteger(MQL_VISUAL_MODE) != 0);
@@ -559,6 +560,25 @@ public:
 
       SetLabel("L_DEC_RSN",  "REASON:",                           m_clr_label,       x_label, y_cur);
       SetLabel("V_DEC_RSN",  reason_disp,                         m_clr_val_default, x_val,   y_cur);
+
+      // --- SECTION F: SIGNAL FUNNEL (DIAGNOSTIC AUDIT) ---
+      if(funnel != NULL)
+      {
+         y_cur += 16;
+         SetLabel("SEC_F",      "--- SIGNAL FUNNEL ---",             m_clr_section,     x_label, y_cur, 8, "Consolas");
+         y_cur += dy;
+         SetLabel("L_FUN_SWP",  "SWEEP / RECLAIM:",                  m_clr_label,       x_label, y_cur);
+         SetLabel("V_FUN_SWP",  StringFormat("%d / %d", funnel.GetM15Sweep(), funnel.GetM15Reclaim()), m_clr_val_default, x_val, y_cur);
+         y_cur += dy;
+         SetLabel("L_FUN_M5",   "M5 ID / CONFIRM:",                  m_clr_label,       x_label, y_cur);
+         SetLabel("V_FUN_M5",   StringFormat("%d / %d", funnel.GetM5ExtremeIdentified(), funnel.GetM5BreakConfirmed()), m_clr_val_default, x_val, y_cur);
+         y_cur += dy;
+         SetLabel("L_FUN_RSK",  "RISK ATT / REJ:",                   m_clr_label,       x_label, y_cur);
+         SetLabel("V_FUN_RSK",  StringFormat("%d / %d", funnel.GetRiskValidationAttempts(), funnel.GetRiskRejected()), (funnel.GetRiskRejected() > 0 ? m_clr_val_warn : m_clr_val_default), x_val, y_cur);
+         y_cur += dy;
+         SetLabel("L_FUN_ORD",  "ORDER ATT / EXE:",                  m_clr_label,       x_label, y_cur);
+         SetLabel("V_FUN_ORD",  StringFormat("%d / %d", funnel.GetOrderSendAttempts(), funnel.GetOrdersExecuted()), (funnel.GetOrdersExecuted() > 0 ? m_clr_val_pos : m_clr_val_default), x_val, y_cur);
+      }
 
       ChartRedraw(0);
    }
