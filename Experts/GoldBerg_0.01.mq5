@@ -1,4 +1,4 @@
-﻿//+------------------------------------------------------------------+
+//+------------------------------------------------------------------+
 //|                                                GoldBerg_0.01.mq5 |
 //|                                  Copyright 2026, GoldBerg        |
 //|                                                     Version 0.01 |
@@ -25,7 +25,7 @@ input group "=== General Settings ==="
 input ulong    InpMagicNumber       = 100888;    // EA Magic Number
 
 input group "=== Risk Management ==="
-input double   InpRiskPercent       = 5.0;       // Risk % Per Trade (Candidate Profile: Small-Account Experiment)
+input double   InpRiskPercent       = 1.0;       // Risk % Per Trade (Baseline: 1.0%)
 input int      InpMaxOpenTrades     = 1;         // Max Open Trades (V1 Baseline = 1)
 input double   InpMaxDailyLossPct   = 3.0;       // Max Daily Loss % [UNIMPLEMENTED / FUTURE CANDIDATE]
 input int      InpMaxLosses         = 3;         // Max Consecutive Losses [UNIMPLEMENTED / FUTURE CANDIDATE]

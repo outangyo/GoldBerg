@@ -30,7 +30,7 @@ private:
 
 public:
    CRiskManager() :
-      m_risk_percent_per_trade(5.0),
+      m_risk_percent_per_trade(1.0),
       m_max_daily_loss_percent(3.0),
       m_max_open_positions(1),
       m_max_consecutive_losses(3),
